@@ -44,3 +44,132 @@ my-agentic-devops/
 └── shared_utils/                # ── 【第四层：公共基础设施】 ──
     ├── claude_cli.py            # 统一封装的 Claude Code 命令行调用工具（subprocess）
     └── json_lock.py             # 防止多线程/多进程读写 JSON 冲突的小工具
+
+
+
+为了让你能够直接上手搭建，这里为你设计了一套**完全工业级、可落地**的目录结构。这套架构的核心逻辑是“代码驱动流程（状态机），Markdown/JSON 承载数据与上下文，Claude Code 作为执行器”。
+
+---
+
+## 📂 完整目录结构一览
+
+```text
+my-agentic-devops/
+│
+├── .claudecode/                 # Claude Code 项目级配置
+│   └── config.json              # 限制 Claude 只能修改特定工作区，防止误删主控代码
+│
+├── orchestrator/                # ── 【第一层：中央总控层】 ──
+│   ├── main.py                  # 系统唯一入口（总状态机，负责大阶段流转和轮询）
+│   └── requirements_db/         # 需求单数据库（纯文本持久化）
+│       ├── REQ-2026001.json     # 包含：原始需求、拆解状态、当前 LOOP 深度等
+│       └── REQ-2026002.json
+│
+├── phases/                      # ── 【第二层：阶段执行层】 ──
+│   │
+│   ├── 01_requirement/          # 阶段 A：需求分析与单据创建
+│   │   ├── req_agent.py         # 唤醒 Claude：将用户模糊的话拆解为结构化任务
+│   │   └── prompts.md           # 需求 Agent 的 System Prompt（教它如何做拆解）
+│   │
+│   ├── 02_development/          # 阶段 B：多 Agent 核心开发区（含3层递归循环）
+│   │   ├── dev_manager.py       # 开发主控（负责组装子Agent提示词，并控制 3 层循环）
+│   │   ├── sub_agents/          # 垂直领域子 Agent 的提示词定义
+│   │   │   ├── ba.md            # 业务分析（BA）Agent 的角色定义与规则
+│   │   │   ├── arch.md          # 架构设计（Arch）Agent 的角色定义与规则
+│   │   │   ├── coder.md         # 核心编码（Coder）Agent 的角色定义与规则
+│   │   │   └── tester.md        # 单元测试（Tester）Agent 的角色定义与规则
+│   │   └── workspace/           # 💻 独立代码沙盒（Claude Code 实际写代码的地方）
+│   │       └── current_project/ # 当前正在被开发的源码、测试用例都放这里
+│   │
+│   ├── 03_testing/              # 阶段 C：独立集成测试与 Bug 修复
+│   │   ├── ticket_monitor.py    # 测试单监控脚本（轮询并读取外部/内部的测试缺陷单）
+│   │   ├── bug_fix_manager.py   # Bug 修复主控（负责把 Bug 单传给 Coder 并验证）
+│   │   └── workspace/           # 🐛 Bug 修复专用临时工作区
+│   │
+│   └── 04_retrospective/        # 阶段 D：文档更新与复盘收尾
+│       ├── doc_updater.py       # 文档自动化 Agent（对比源码，自动增改平台 API 文档）
+│       └── retro_agent.py       # 复盘 Agent（分析本次开发日志/LOOP次数，沉淀经验）
+│
+├── docs/                        # ── 【第三层：共享知识库】 ──
+│   ├── platform_api/            # 平台 API 核心文档（Doc Agent 会动态更新这里）
+│   │   └── api_spec.md          # 最新的平台接口说明书
+│   └── retrospectives/          # 历史复盘沉淀（为下一次迭代提供 Few-shot 案例）
+│       ├── RETRO-2026001.md     # 记录：踩坑点、报错信息、如何避免
+│       └── README.md            # 复盘索引
+│
+└── shared_utils/                # ── 【第四层：公共基础设施】 ──
+    ├── claude_cli.py            # 统一封装的 Claude Code 命令行调用工具（subprocess）
+    └── json_lock.py             # 防止多线程/多进程读写 JSON 冲突的小工具
+
+```
+
+---
+
+## 🏛️ 架构分层用途与详细说明
+
+这套架构分为四个清晰的层次，它们各司其职：
+
+### 1. 中央总控层 (`orchestrator/`)
+
+* **写什么内容：** 这里**全部写 Python 代码**。它是整套系统的“大脑”和“计时器”。
+* **具体用途：** * `main.py` 里是一个死循环（或者定时任务），它只干一件事：扫描 `requirements_db/` 下的 JSON 文件。
+* 看到状态是 `TODO`，就去调用 `phases/01_requirement/`；看到状态是 `REQ_ANALYZED`，就去调用 `phases/02_development/`。
+* **它绝对不碰任何具体的业务逻辑或代码生成，只做状态分发。**
+
+
+
+### 2. 阶段执行层 (`phases/`)
+
+这是你的自动化流水线车间，每个阶段都是一个独立的子系统。
+
+* **`01_requirement`（需求段）：**
+* `req_agent.py`（Python）负责读取用户的原始输入，然后通过 `prompts.md`（Markdown）规范 Claude 的输出，将其转化成标准的前后端开发任务，写入需求单。
+
+
+* **`02_development`（开发段 - 核心）：**
+* `dev_manager.py`（Python）：**这里编写 3 层 Loop 循环控制逻辑。** 它负责记录当前的深度（1, 2, 3）。
+* `sub_agents/`（Markdown）：这里存放各个子 Agent 的灵魂（Prompt）。比如 `coder.md` 告诉 Claude：“你是一个精通 Python 的老手”；`tester.md` 告诉 Claude：“你是一个严格的 QA，负责写断言”。
+* `workspace/`：**极其重要！** 这是给 `Claude Code` 划分的“隔离保护区”。Claude Code 只能在这个目录下增删改查文件，绝对不允许它跳出这个目录去修改你的 `dev_manager.py` 或 `main.py`。
+
+
+* **`03_testing`（测试/修Bug段）：**
+* 当系统进入测试阶段，`ticket_monitor.py` 模拟一个监控器，一旦有 Bug Ticket 被提过来，它就拉下日志，并在它专属的 workspace 里启动修复。
+
+
+* **`04_retrospective`（文档与复盘段）：**
+* `doc_updater.py`：在代码测试完全通过后启动。它会用静态分析或者让 Claude 读取 `02_development/workspace/` 下最终稳定的源码，自动把新接口补充到 `docs/platform_api/api_spec.md` 中。
+* `retro_agent.py`：收集本次开发中 `dev_manager.py` 记录的报错日志、循环次数，总结出“踩坑指南”存入 `docs/retrospectives/`。
+
+
+
+### 3. 共享知识库 (`docs/`)
+
+* **写什么内容：** **纯 Markdown 文件**。
+* **具体用途：** * 存放供人类查阅、同时供 Agent 随时检索的全局信息。
+* 这里的核心是 `retrospectives/`（复盘库）。在下一轮新需求启动时，开发主控（`dev_manager.py`）会把上一次的复盘 Markdown 作为 Context 喂给 Claude，实现**让 Agent 越写越聪明，不再犯同样的错误**。
+
+
+
+### 4. 公共基础设施 (`shared_utils/`)
+
+* **写什么内容：** 纯底层 Python 工具代码。
+* **具体用途：**
+* 封装统一的命令调用。例如，你不需要在每个 Agent 里都写 `subprocess.run("claude ...")`，统一由 `claude_cli.py` 暴露一个 `execute_claude_command(prompt, workdir)` 函数来搞定，方便在这里做全局的 Token 统计或日志审计。
+
+
+
+---
+
+## ⚡ 运作实例：当一个需求进来时
+
+1. 用户丢进一句话，`orchestrator/main.py` 感知到，在 `requirements_db` 生成 `REQ-001.json`，状态设为 `TODO`。
+2. `main.py` 唤醒 `phases/01_requirement/`，将模糊需求变成结构化 MD 任务，更新状态为 `REQ_ANALYZED`。
+3. `main.py` 唤醒 `phases/02_development/dev_manager.py`。
+4. `dev_manager.py` 启动循环：
+* **Loop 1：** 调度 Coder Agent 在 `workspace/` 生成代码，调度 Tester Agent 跑测试 $\rightarrow$ 假设测试失败，捕获 Traceback 日志。
+* **Loop 2：** `dev_manager.py` 发现深度为 1（小于3），将日志和源码重新塞给 Claude Code：“这是第 2 次尝试，请修复此报错” $\rightarrow$ 测试通过。
+* 退出循环，代码稳定。状态修改为 `TEST_PASSED`。
+
+
+5. `main.py` 唤醒 `phases/04_retrospective/` 下的两个 Agent：一个去自动更新 `docs/platform_api/api_spec.md`（完善平台API）；一个去写本次的复盘报告。
+6. 状态改为 `ARCHIVED`，流程完美闭环。
