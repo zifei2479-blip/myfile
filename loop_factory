@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LOOP Ultimate Architecture Spec</title>
+<style>
+body{font-family:Inter,Arial,sans-serif;background:#0b1020;color:#e5e7eb;margin:0;padding:0}
+header{background:#111827;padding:30px;text-align:center}
+section{margin:20px;padding:20px;background:#151c2f;border-radius:12px}
+h1,h2,h3{color:#60a5fa}
+pre{white-space:pre-wrap;line-height:1.5}
+.code{background:#0f172a;padding:15px;border-radius:8px}
+</style>
+</head>
+<body>
+
+<header>
+<h1>LOOP Autonomous Software Factory</h1>
+<p>终极架构规范（直接提供给 Claude Code / GPT / Cursor 生成系统）</p>
+</header>
+
+<section>
+<h2>System Vision</h2>
+<pre>
+用户输入需求
+    ↓
+需求分析
+    ↓
+架构设计
+    ↓
+任务拆解
+    ↓
+并行开发
+    ↓
+自动测试
+    ↓
+自动修复
+    ↓
+文档同步
+    ↓
+经验沉淀
+    ↓
+持续优化
+</pre>
+</section>
+
+<section>
+<h2>Core Components</h2>
+<div class="code">
+Chief Agent<br>
+Workflow Engine<br>
+State Machine<br>
+Task Center<br>
+Agent Center<br>
+Knowledge Center<br>
+Memory Center<br>
+Test Center<br>
+Documentation Center
+</div>
+</section>
+
+<section>
+<h2>Architecture Diagram</h2>
+<pre>
+Human
+  │
+  ▼
+
+Chief Agent
+(唯一调度中心)
+
+  │
+  ▼
+
+Planning Layer
+├─ Requirement Task
+├─ BA Task
+├─ Architect Task
+├─ Security Task
+└─ Test Design Task
+
+  │
+  ▼
+
+Development Manager
+
+├─ DB Task
+├─ Backend Task
+├─ API Task
+├─ Frontend Task
+├─ Unit Test Task
+└─ DevOps Task
+
+  │
+  ▼
+
+Verification Layer
+
+├─ Code Review Task
+├─ Integration Test Task
+├─ E2E Test Task
+├─ Performance Test Task
+└─ Security Test Task
+
+  │
+  ▼
+
+Bug Loop
+
+Root Cause Task
+      ↓
+Fix Task
+      ↓
+Regression Task
+      ↓
+PASS ?
+ ├─ NO → Root Cause
+ └─ YES
+
+  │
+  ▼
+
+Documentation Layer
+
+├─ Requirement Update
+├─ Design Update
+├─ API Update
+└─ Changelog Update
+
+  │
+  ▼
+
+Retrospective Layer
+
+├─ Lessons Learned
+├─ Best Practice Update
+├─ Prompt Update
+└─ Knowledge Update
+
+  │
+  ▼
+
+DONE
+</pre>
+</section>
+
+<section>
+<h2>State Machine</h2>
+<pre>
+NEW
+ANALYSIS
+DESIGN
+DEVELOPMENT
+REVIEW
+TEST
+FIX
+DOC
+RETRO
+DONE
+</pre>
+</section>
+
+<section>
+<h2>Task Definition</h2>
+<pre>
+{
+  "id":"task-id",
+  "type":"backend",
+  "state":"running",
+  "input":{},
+  "output":{},
+  "owner":"agent-name",
+  "retry":0
+}
+</pre>
+</section>
+
+<section>
+<h2>Agent Rules</h2>
+<pre>
+1. 每个Agent必须独立Task运行
+2. 每个Agent独立上下文
+3. 每个Agent独立Memory
+4. Agent之间禁止直接调用
+5. 必须通过Chief Agent调度
+6. 所有结果写入Task Center
+</pre>
+</section>
+
+<section>
+<h2>Knowledge System</h2>
+<pre>
+knowledge/
+
+├─ architecture/
+├─ bugs/
+├─ best-practices/
+├─ retrospectives/
+├─ prompts/
+└─ domain-rules/
+</pre>
+</section>
+
+<section>
+<h2>Project Structure</h2>
+<pre>
+loop/
+
+├─ chief-agent/
+├─ workflow-engine/
+├─ state-machine/
+├─ task-center/
+├─ agent-center/
+│
+├─ agents/
+│   ├─ requirement/
+│   ├─ ba/
+│   ├─ architect/
+│   ├─ backend/
+│   ├─ frontend/
+│   ├─ db/
+│   ├─ review/
+│   ├─ test/
+│   ├─ rootcause/
+│   ├─ fix/
+│   ├─ doc/
+│   └─ retro/
+│
+├─ knowledge/
+├─ memory/
+├─ prompts/
+├─ integrations/
+│   ├─ jira/
+│   ├─ github/
+│   ├─ cicd/
+│   └─ test-platform/
+│
+├─ dashboard/
+└─ projects/
+</pre>
+</section>
+
+<section>
+<h2>Claude Code Implementation Requirements</h2>
+<pre>
+- 使用 Task 作为最小执行单元
+- 所有 Agent 通过 Claude Code Task 执行
+- Workflow Engine 驱动状态流转
+- PostgreSQL 保存状态
+- Redis 保存运行上下文
+- GitHub 管理代码
+- Jira 管理需求
+- 自动生成 PR
+- 自动更新文档
+- 自动生成复盘
+- 支持未来 Agent 自我优化
+</pre>
+</section>
+
+</body>
+</html>
