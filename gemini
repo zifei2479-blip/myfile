@@ -1,0 +1,46 @@
+my-agentic-devops/
+│
+├── .claudecode/                 # Claude Code 项目级配置
+│   └── config.json              # 限制 Claude 只能修改特定工作区，防止误删主控代码
+│
+├── orchestrator/                # ── 【第一层：中央总控层】 ──
+│   ├── main.py                  # 系统唯一入口（总状态机，负责大阶段流转和轮询）
+│   └── requirements_db/         # 需求单数据库（纯文本持久化）
+│       ├── REQ-2026001.json     # 包含：原始需求、拆解状态、当前 LOOP 深度等
+│       └── REQ-2026002.json
+│
+├── phases/                      # ── 【第二层：阶段执行层】 ──
+│   │
+│   ├── 01_requirement/          # 阶段 A：需求分析与单据创建
+│   │   ├── req_agent.py         # 唤醒 Claude：将用户模糊的话拆解为结构化任务
+│   │   └── prompts.md           # 需求 Agent 的 System Prompt（教它如何做拆解）
+│   │
+│   ├── 02_development/          # 阶段 B：多 Agent 核心开发区（含3层递归循环）
+│   │   ├── dev_manager.py       # 开发主控（负责组装子Agent提示词，并控制 3 层循环）
+│   │   ├── sub_agents/          # 垂直领域子 Agent 的提示词定义
+│   │   │   ├── ba.md            # 业务分析（BA）Agent 的角色定义与规则
+│   │   │   ├── arch.md          # 架构设计（Arch）Agent 的角色定义与规则
+│   │   │   ├── coder.md         # 核心编码（Coder）Agent 的角色定义与规则
+│   │   │   └── tester.md        # 单元测试（Tester）Agent 的角色定义与规则
+│   │   └── workspace/           # 💻 独立代码沙盒（Claude Code 实际写代码的地方）
+│   │       └── current_project/ # 当前正在被开发的源码、测试用例都放这里
+│   │
+│   ├── 03_testing/              # 阶段 C：独立集成测试与 Bug 修复
+│   │   ├── ticket_monitor.py    # 测试单监控脚本（轮询并读取外部/内部的测试缺陷单）
+│   │   ├── bug_fix_manager.py   # Bug 修复主控（负责把 Bug 单传给 Coder 并验证）
+│   │   └── workspace/           # 🐛 Bug 修复专用临时工作区
+│   │
+│   └── 04_retrospective/        # 阶段 D：文档更新与复盘收尾
+│       ├── doc_updater.py       # 文档自动化 Agent（对比源码，自动增改平台 API 文档）
+│       └── retro_agent.py       # 复盘 Agent（分析本次开发日志/LOOP次数，沉淀经验）
+│
+├── docs/                        # ── 【第三层：共享知识库】 ──
+│   ├── platform_api/            # 平台 API 核心文档（Doc Agent 会动态更新这里）
+│   │   └── api_spec.md          # 最新的平台接口说明书
+│   └── retrospectives/          # 历史复盘沉淀（为下一次迭代提供 Few-shot 案例）
+│       ├── RETRO-2026001.md     # 记录：踩坑点、报错信息、如何避免
+│       └── README.md            # 复盘索引
+│
+└── shared_utils/                # ── 【第四层：公共基础设施】 ──
+    ├── claude_cli.py            # 统一封装的 Claude Code 命令行调用工具（subprocess）
+    └── json_lock.py             # 防止多线程/多进程读写 JSON 冲突的小工具
