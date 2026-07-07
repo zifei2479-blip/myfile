@@ -1,0 +1,126 @@
+要让本地的 Python 状态机在遇到问题时**主动向 Multica 打报告并触发提醒**，我们需要在代码中利用 Multica 的命令行工具（CLI）或 API。
+
+由于 Multica 采用的是“看板/任务驱动”的模式，当本地 3 层循环用尽或发生未知中断时，代码核心要做的就是两件事：
+
+1. **向 Multica 发送阻塞信号（Block Issue/Task）**：让看板上的卡片变红，触发 Multica 的通知机制。
+2. **将详细的报错日志通过 CLI 附件或评论（Comment）同步上去**：方便你看到提醒后直接在手机或网页端排查，不需要去翻本地密密麻麻的日志。
+
+以下是具体的 Python 控制流实现代码：
+
+---
+
+### 💻 `phases/02_development/dev_manager.py`（带 Multica 提醒联动）
+
+```python
+import subprocess
+import json
+import os
+
+# 模拟 Multica 的 CLI 调用封装
+def multica_post_comment(issue_id, comment_text):
+    """向 Multica 的指定任务卡片下追加评论"""
+    # 实际对应的 Multica 命令类似: multica issue comment <id> -m "text"
+    cmd = f'multica issue comment {issue_id} -m "{comment_text}"'
+    subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+def multica_mark_blocked(issue_id, reason):
+    """在 Multica 看板上将该任务标记为 Blocked (阻碍状态)，从而触发 Webhook 报警"""
+    # 实际对应的 Multica 命令类似: multica issue block <id> --reason "text"
+    cmd = f'multica issue block {issue_id} --reason "{reason}"'
+    subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+
+def run_development_loop(requirement_file_path):
+    # 1. 初始化读取本地需求 JSON（由总控 main.py 传过来）
+    with open(requirement_file_path, 'r', encoding='utf-8') as f:
+        req_data = json.load(f)
+    
+    req_id = req_data["id"]          # 对应 Multica 的 Issue ID
+    max_loops = 3
+    current_depth = 1
+    test_passed = False
+    last_error_log = ""
+
+    print(f"🚀 [Multica 任务启动] 开始处理任务: {req_id}")
+
+    # 2. 进入最多 3 层的核心开发与测试循环
+    while current_depth <= max_loops:
+        print(f"🔄 当前处于本地自动修复第 {current_depth}/{max_loops} 层循环...")
+        
+        # ── 唤醒 Claude Code 编写或修复代码 ──
+        # 将上一次的报错日志（如果有）作为上下文喂给 Claude
+        claude_prompt = f"请根据需求修复或编写代码。当前循环深度: {current_depth}。"
+        if last_error_log:
+            claude_prompt += f" 上一次编译/测试报错如下，请针对性修复:\n{last_error_log}"
+            
+        # 调用本地 Claude Code 命令行在沙盒 workspace 中写代码
+        # 限制范围在本地开发区
+        subprocess.run(f"claude '{claude_prompt}'", shell=True, cwd="phases/02_development/workspace")
+
+        # ── 运行单元测试验证 ──
+        # 假设你的单元测试脚本是 pytest 或 npm test
+        test_result = subprocess.run("pytest test_user_service.py", shell=True, capture_output=True, text=True, cwd="phases/02_development/workspace")
+        
+        if test_result.returncode == 0:
+            test_passed = True
+            print("✅ 单元测试通过！")
+            break
+        else:
+            # 捕获测试失败的 Traceback 日志
+            last_error_log = test_result.stderr if test_result.stderr else test_result.stdout
+            print(f"❌ 测试失败，日志已捕获。")
+            
+            # 顺手在 Multica 上留个言，记录一下自动化流转痕迹
+            multica_post_comment(req_id, f"[🤖 本地自动流转] 第 {current_depth} 次测试失败，正在尝试自动修复...")
+            current_depth += 1
+
+    # 3. 循环结束后的处理判断（极大化利用 Multica 提醒的关键点）
+    if test_passed:
+        print("🎉 本地任务完美解决，准备提交代码")
+        # 让 Multica 上的任务走向下一个状态，比如 Complete
+        subprocess.run(f"multica issue close {req_id}", shell=True)
+        return True
+    else:
+        # 🚨 【核心】3层循环用尽，依然失败！
+        print("🚨 警告：3次自动化修复机会已用尽，代码仍然有 Bug。正在呼叫人类...")
+        
+        # 截取报错的关键前几行，避免日志过长
+        short_error = "\n".join(last_error_log.split("\n")[:10])
+        
+        # 1. 触发 Multica 的 Block 机制。看板卡片瞬间变红！
+        multica_mark_blocked(req_id, f"本地 3 层 AI 修复循环已耗尽，测试依然失败。")
+        
+        # 2. 把详细报错以 Comment 形式贴到看板卡片里，方便你用手机直接看报错
+        detailed_comment = (
+            f"⚠️ **本地 Agent 熔断报告** ⚠️\n"
+            f"任务 `{req_id}` 经过 3 次迭代测试仍未通过。\n"
+            f"**最后一次报错截取:**\n"
+            f"```text\n{short_error}\n```\n"
+            f"💡 *请人工打开 Obsidian 或本地工作区进行排查。*"
+        )
+        multica_post_comment(req_id, detailed_comment)
+        
+        # 3. 同时把本地 Obsidian 的状态标记为 #status/blocked
+        # 这样你打开 Obsidian 画布也能看到红色的块
+        with open(requirement_file_path, 'w', encoding='utf-8') as f:
+            req_data["status"] = "BLOCKED"
+            json.dump(req_data, f, ensure_ascii=False, indent=2)
+            
+        return False
+
+```
+
+---
+
+### 📡 怎么配置才能在手机上收到弹窗？
+
+写好上面的代码后，它只是把信号发射给了 Multica。要让它真正轰炸你的手机，只需要在 Multica 的后台配置 **Outbound Webhook**：
+
+1. **获取机器人 Webhook**：在你的飞书、钉钉、微信群里创建一个“群机器人”，复制它的 Webhook URL。
+2. **在 Multica 绑定**：打开 Multica 网页控制台 $\rightarrow$ 进入 `Settings` $\rightarrow$ `Workspaces` $\rightarrow$ `Webhooks`。
+3. **添加配置**：
+* **URL**: 填入你飞书/钉钉机器人的链接。
+* **Events (触发事件)**: 勾选 `issue.blocked`（任务被阻碍）和 `task.failed`（任务失败）。
+
+
+4. **效果**：当你的代码跑到第 83 行执行 `multica_mark_blocked` 的瞬间，你的手机就会收到飞书或微信弹窗，里面清晰地写着你在 `detailed_comment` 里拼装的代码报错。你甚至不需要起床打开电脑，在手机上看一眼 Multica 的卡片评论，就能知道是哪个业务逻辑写炸了。
