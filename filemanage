@@ -1,0 +1,112 @@
+把 Obsidian 接入你的自动化框架，本质上是把一个“人类好读、AI 好懂”的网状数据库缝合到你的开发流水线中。
+
+为了让你在面对高门槛业务时开发更高效、准确，下面为你提供 **Git 官方链接**、**知识库落地规划** 以及 **AI 如何精准读取它** 的全套方案。
+
+---
+
+## 🌐 1. Git 官方连接与同步建议
+
+Obsidian 本身是纯文本的 Markdown 文件，管理它最安全、最高效的方式就是用 **Git**。
+
+* **Git 官方下载/文档链接：** [https://git-scm.com](https://git-scm.com)
+* **Obsidian 自动化同步插件：** 在 Obsidian 的“社区插件”中搜索 **`Obsidian Git`**。它可以配置为每隔 X 分钟自动 `git add / commit / push` 到你的私有 GitHub/Gitee 仓库，确保你的业务文档绝对不会丢失，同时多端同步。
+
+---
+
+## 🗺️ 2. 如何规划 Obsidian 管理业务文档（面向 AI 优化）
+
+在复杂业务场景下，我们要为大模型量身定制一个 **“显性大脑”**。建议在你的 `docs/`（即 Obsidian 仓库根目录）下，规划以下四个核心文件夹：
+
+```text
+docs/ (Obsidian Vault 根目录)
+│
+├── 🎯 01_Business_Glossary/   # ── 1. 行业黑话与核心业务术语 ──
+│   ├── 时序约束分析.md          # 里面定义：什么是时序、如何判定违规
+│   └── 音频流缓冲区.md          # 里面定义：缓冲大小限制、溢出处理逻辑
+│
+├── 🏛️ 02_System_Architecture/ # ── 2. 平台核心 API 与全局通用架构 ──
+│   ├── 平台基础API说明.md       # 基础 Controller 的入参出参规范
+│   └── 数据库设计规范.md        # 必须包含的通用字段、命名空间定义
+│
+├── 📝 03_Requirements_Doc/     # ── 3. 需求单镜像（与 JSON 保持同步） ──
+│   ├── REQ-2026001_用户登录.md  # 包含指向术语的链接，如 [[音频流缓冲区]]
+│   └── REQ-2026002_时序检查.md
+│
+└── 🔄 04_Retrospectives/       # ── 4. 历次自动复盘（Few-shot 弹药库） ──
+    ├── RETRO-2026001.md         # 记录：上次因为什么报错，3层循环是怎么修复的
+    └── RETRO-2026002.md
+
+```
+
+### 🧠 核心提效设计：善用“双向链接 `[[ ]]`”
+
+当你或 `Requirement Agent` 在 `03_Requirements_Doc` 撰写新需求时，只要涉及到高门槛业务，必须打上双链：
+
+> “本次开发需要对 **`[[音频流缓冲区]]`** 加上动态扩容机制，并严格遵守 **`[[数据库设计规范]]`**。”
+
+---
+
+## 🚀 3. 开发提效闭环：Python 怎么利用这个知识库？
+
+光写好文档没用，必须让你的 Python 总控（`orchestrator`）在唤醒 `Claude Code` 之前，把这些高价值的业务文档**打包成上下文**喂过去。
+
+下面是这个流程的高效运转逻辑：
+
+### 第一步：Python 自动提取双链上下文
+
+当你的开发主控准备开发 `REQ-2026002` 时，它会先用 Python 静态读取这个需求 Markdown 文件的文本，通过正则表达式**把所有的 `[[双链]]` 抓出来**：
+
+```python
+import re
+import os
+
+def extract_obsidian_context(requirements_md_path):
+    with open(requirements_md_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # 1. 匹配出所有的双向链接，例如 ['音频流缓冲区', '数据库设计规范']
+    links = re.findall(r'\[\[(.*?)\]\]', content)
+    
+    context_str = "💡 【核心业务上下文背景知识】\n"
+    
+    # 2. 去 Obsidian 知识库里定向寻找这些术语的详细定义
+    vault_path = "docs/"
+    for root, dirs, files in os.walk(vault_path):
+        for file in files:
+            file_name_without_ext = os.path.splitext(file)[0]
+            if file_name_without_ext in links and file.endswith('.md'):
+                with open(os.path.join(root, file), 'r', encoding='utf-8') as f_term:
+                    context_str += f"\n--- 术语 [{file_name_without_ext}] 的标准定义 ---\n"
+                    context_str += f_term.read() + "\n"
+                    
+    return context_str
+
+```
+
+### 第二步：动态注入给 Claude Code
+
+在你的 `dev_manager.py` 唤醒 Claude 时，把上面提取出来的 `context_str` 拼接到 Prompt 的最前面：
+
+```python
+business_context = extract_obsidian_context("docs/03_Requirements_Doc/REQ-2026002.md")
+
+# 拼装最终交给 Claude Code 的指令
+final_prompt = f"""
+{business_context}
+
+请严格遵守上述业务术语定义和架构规范，去 workspace 目录下实现以下新需求：
+1. 编写时序检查核心代码...
+"""
+
+# 执行 Claude Code
+subprocess.run(f"claude '{final_prompt}'", shell=True)
+
+```
+
+---
+
+## 🎯 最终达成的效果
+
+1. **准确度暴增：** Claude Code 不再是盲人摸象。它在写代码的瞬间，手里拿着你行业最标准的“黑话字典（Glossary）”**和**“历史踩坑复盘（Retrospectives）”。
+2. **人类审查极简：** 你打开 **Obsidian Canvas (画布)**，把需求卡片、架构图、以及生成的代码拖在一起。每天晚上，你点开复杂的需求，顺着双链就能看懂 Agent 有没有跑偏。
+3. **沉淀即进化：** 每次夜间由 Multica 触发的自动复盘，都会在 `04_Retrospectives/` 生成带标签的新笔记。下一次遇到类似组件的开发，Python 又会自动把它作为 Few-shot 喂给大模型。系统的业务能力随着你的 Git 提交，形成一个完美的**正向增长螺旋**。
