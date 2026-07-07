@@ -1,0 +1,160 @@
+在高门槛的业务项目里，创建一个**决策 Agent（Decision Agent）**是极其明智的选择。它的核心任务就是充当系统的**“备忘录与政策法案”**。
+
+大模型每次遇到“二选一”或者“要不要这样做”的方案冲突时，不再通过控制台弹窗轰炸你，而是先去问这个决策 Agent；决策 Agent 如果在历史记录里找不到答案，才会最终升级求助人类，并在你给出答案后，**自动把这个决策变成一条 Obsidian 规则**，确保下一次“绝不问重复的问题”。
+
+以下是为你的自研框架设计的“决策 Agent”运行逻辑与代码实现方案：
+
+---
+
+## 🧭 1. 决策 Agent 的核心工作流
+
+决策 Agent 采用 **“三步检索与自愈”** 机制：
+
+```text
+       大模型遇到决策点 (例如: 音频缓冲区满了，是抛出异常还是动态扩容？)
+                              │
+                              ▼
+                 1. 检索 Obsidian 决策库 (MOC)
+                              │
+            ┌─────────────────┴─────────────────┐
+            ▼ (找到历史决策)                      ▼ (找不到历史决策)
+   按照历史规定执行 (0打扰)                2. 触发 Multica 报警，求助人类
+                                                │
+                                                ▼
+                                      3. 人类在看板/手机给出答复
+                                                │
+                                                ▼
+                                   自动在 Obsidian 写入新决策
+                                      (下次相同问题自动通过)
+
+```
+
+---
+
+## 📂 2. 在 Obsidian 中规划决策库
+
+在你的 `docs/`（Obsidian 知识库）下，新建一个专属目录：
+
+```text
+docs/
+└── 🏛️ 05_Decision_Log/          # ── 决策备忘录 ──
+    ├── INDEX_DECISION_MOC.md    # 决策索引地图（Dataview 自动聚合）
+    ├── DEC-001_音频溢出策略.md    # 历史决策1：缓冲区满了一律动态扩容，禁止抛异常
+    └── DEC-002_数据库命名空间.md  # 历史决策2：EDA元件表一律用前缀 `eda_`
+
+```
+
+每篇决策笔记的格式要高度结构化，方便 AI 读取（包含 `Frontmatter` 标签）：
+
+```markdown
+---
+tags: [decision, audio, buffer]
+status: APPROVED
+---
+# DEC-001_音频溢出策略
+
+- **问题场景**：当 MQTT 传入的音频数据流超过缓冲区最大阈值时，应该如何处理？
+- **最终决策**：**一律采用动态扩容机制（以 2 倍 size 递增）**，绝对禁止直接抛出 Exception 或中断连接。
+- **决策人**：人类架构师 (You)
+- **更新时间**：2026-07
+
+```
+
+---
+
+## 💻 3. 决策 Agent 的 Python 代码实现
+
+你可以把这个 Agent 写成一个独立的模块 `phases/sub_agents/decision_agent.py`，供 `dev_manager.py` 在遇到分支选择时随时调用：
+
+```python
+import os
+import re
+import subprocess
+
+class DecisionAgent:
+    def __init__(self, decision_dir="docs/05_Decision_Log"):
+        self.decision_dir = decision_dir
+
+    def ask_for_decision(self, issue_id, scenario_description, options_list):
+        """
+        向决策 Agent 寻求指导。
+        scenario_description: 遇到的问题场景描述
+        options_list: 目前可选的几个方案
+        """
+        print(f"🤖 [决策 Agent] 正在研判场景: '{scenario_description}'...")
+
+        # ── 🛠️ 第一步：静态扫描 Obsidian 决策库 ──
+        existing_decisions = ""
+        for file in os.listdir(self.decision_dir):
+            if file.endswith(".md") and not file.startswith("INDEX"):
+                with open(os.path.join(self.decision_dir, file), 'r', encoding='utf-8') as f:
+                    existing_decisions += f"\n--- 历史决策: {file} ---\n" + f.read()
+
+        # ── 🧠 第二步：让 Claude 研判历史决策是否能覆盖当前场景 ──
+        judgment_prompt = f"""
+你是我这套高门槛系统的【决策终审 Agent】。你的职责是判断当前遇到的技术/业务冲突，是否可以被历史决策所覆盖。
+
+以下是【历史已批准的决策列表】:
+{existing_decisions}
+
+当前遇到了以下【新冲突场景】:
+场景描述: {scenario_description}
+可选方案: {options_list}
+
+请研判：
+1. 历史决策中是否有能直接指导当前场景的规则？如果有，请给出最终执行方案，并以 `[MATCHED]: <决策文件名和方案>` 开头。
+2. 如果这是一个全新的、从未定义过的问题，历史决策无法覆盖，请直接输出 `[UNKNOWN]`，不要瞎猜。
+"""
+        
+        # 调用大模型（可以通过本地 API 或 Claude Code）进行意图判断
+        # 这里用伪代码代表调用大模型返回的文本
+        response = call_claude_llm(judgment_prompt)
+
+        if "[MATCHED]" in response:
+            print("✅ [决策 Agent] 发现匹配的历史合规决策，自动放行！")
+            return {"status": "AUTO_PASSED", "decision": response}
+
+        # ── 🚨 第三步：自愈与报警机制（极大化利用 Multica 提醒人类） ──
+        if "[UNKNOWN]" in response:
+            print("⚠️ [决策 Agent] 这是一个全新的决策空白！正在向 Multica 申请人类仲裁...")
+            
+            # 1. 在 Multica 上提一个阻塞 Issue，卡片变红，并在手机上轰炸你
+            multica_mark_blocked(issue_id, f"遭遇全新决策点，需要人类架构师仲裁: {scenario_description}")
+            
+            # 2. 把选项和场景通过评论推送到你手机
+            human_prompt = (
+                f"🙋‍♂️ **请架构师裁决新问题** 🙋‍♂️\n"
+                f"Agent 遇到了全新业务分支，不知道该怎么选了：\n"
+                f"**场景:** {scenario_description}\n"
+                f"**请在回复中选择或指定方案:** {options_list}\n"
+            )
+            multica_post_comment(issue_id, human_prompt)
+            
+            # 3. 这里让本地脚本挂起，进入轮询等待（等待你在 Multica 上给出答复）
+            # 或者直接熔断，等你下班回来在 Multica/Obsidian 里补上这篇笔记
+            human_choice = wait_for_human_multica_reply(issue_id)
+            
+            # 4. 【核心闭环】：人类给出了方案后，自动在本地生成一篇新的 Obsidian 决策文档！
+            new_dec_id = f"DEC-{len(os.listdir(self.decision_dir)):03d}"
+            new_file_path = os.path.join(self.decision_dir, f"{new_dec_id}_自动沉淀决策.md")
+            with open(new_file_path, 'w', encoding='utf-8') as f_new:
+                f_new.write(f"---\ntags: [decision, auto-learned]\nstatus: APPROVED\n---\n")
+                f_new.write(f"# {new_dec_id} 针对场景: {scenario_description}\n\n")
+                f_new.write(f"- **冲突场景**: {scenario_description}\n")
+                f_new.write(f"- **人类裁决方案**: {human_choice}\n")
+            
+            print(f"💾 新决策已自动固化到知识库: {new_file_path}，下次将不再打扰人类。")
+            return {"status": "HUMAN_RESOLVED", "decision": human_choice}
+
+def call_claude_llm(prompt):
+    # 底层调用大模型的封装逻辑
+    pass
+
+```
+
+---
+
+## 🎯 这套设计的威力在哪里？
+
+1. **零重复打扰（真正的 Agent 进化）：** 任何问题你**只需要在手机上通过 Multica 回复一次**，本地脚本捕获后，立刻在 Obsidian 中落盘变成 `DEC-XXX.md`。下一次再遇到，AI 就会在第一步“静态扫描”时完美命中，零秒通过。
+2. **知识资产Git化：** 自动生成的决策文件会通过 `Obsidian Git` 插件自动同步到你的代码库里。这不仅是给 AI 用的，未来如果团队新进了人类开发者，这也是最宝贵的项目开发“宪法”。
